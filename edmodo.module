@@ -1,0 +1,144 @@
+<?php
+
+/**
+ * Implements hook_menu().
+ */
+function edmodo_menu() {
+  // Callback page for edmodo
+  $items['edmodo'] = array(
+      'title' => 'user validate', 
+      'page callback' => 'get_edmodo_user', 
+      'access arguments' => array(
+          'access content'
+      ), 
+      'type' => MENU_CALLBACK
+  );
+  // Settings form for edmodo key and secret
+  $items['admin/config/people/edmodo-configuration'] = array(
+      'title' => 'Edmodo Configuration', 
+      'description' => 'Configure Edmodo API key & secret.', 
+      'page callback' => 'drupal_get_form', 
+      'page arguments' => array(
+          'edmodo_admin_settings_form'
+      ), 
+      'access arguments' => array(
+          'administer site configuration'
+      ), 
+      'type' => MENU_NORMAL_ITEM
+  );
+  return $items;
+}
+
+/**
+ * Implements hook_form_alter()
+ */
+function edmodo_form_alter(&$form, &$form_state, $form_id) {
+  switch ($form_id) {
+    case 'user_login' :
+    case 'user_login_block' :
+    case 'user_register_form' :
+      // adding edmodo login link
+      login_using_edmodo($form);
+      break;
+  }
+}
+
+/**
+ * creating edmodo icon
+ *
+ * @param unknown $form          
+ * @return multitype:number NULL
+ */
+function login_using_edmodo(&$form = array()) {
+  global $base_url;
+  $form['edmodo'] = array(
+      '#type' => 'markup', 
+      '#markup' => '<span class="edmodo-btn">' . l(t('Edmodo'), 'https://api.edmodo.com/oauth/authorize?width=500&height=500&iframe=true&client_id=' . variable_get('client_id') . '&redirect_uri=' . $base_url . '/edmodo&response_type=code&scope=read_user_email basic read_groups', array(
+          'attributes' => array(
+              'class' => 'colorbox-load'
+          )
+      )) . '</span>', 
+      '#weight' => -99
+  );
+  $form['#attached']['css'] = array(
+      drupal_get_path('module', 'edmodo') . '/css/edmodo.css',
+  );
+  return $form;
+}
+
+/*
+ * The admin settings form.
+ */
+function edmodo_admin_settings_form() {
+  $form = array();
+  $form['client_id'] = array(
+      '#type' => 'textfield', 
+      '#title' => t('Edmodo Client ID'), 
+      '#default_value' => variable_get('client_id'), 
+      '#required' => TRUE
+  );
+  $form['client_secret'] = array(
+      '#type' => 'textfield', 
+      '#title' => t('Edmodo Client Secret'), 
+      '#default_value' => variable_get('client_secret'), 
+      '#required' => TRUE
+  );
+  return system_settings_form($form);
+}
+
+/**
+ * function allow user login to our website using edmodo credentials
+ */
+function get_edmodo_user() {
+  global $base_url;
+  $data = "client_id=" . variable_get('client_id') . "&client_secret=" . variable_get('client_secret') . "&redirect_uri=" . $base_url . "/edmodo&grant_type=authorization_code&code=" . $_GET['code'];
+  $url = 'https://api.edmodo.com/oauth/token';
+  // Creating post array
+  $options = array(
+      'method' => 'POST', 
+      'data' => $data, 
+      'timeout' => 15, 
+      'headers' => array(
+          'Content-Type' => 'application/x-www-form-urlencoded'
+      )
+  );
+  // Requesting to edmodo with details
+  $result = drupal_http_request($url, $options);
+  // Converting result data to array which has "access token" and this is required for API calls
+  $json_array = drupal_json_decode($result->data);
+  // Calling an API which provide the user unique URL (with edmodo user id)
+  $user_url = drupal_http_request('https://api.edmodo.com/users/me?access_token=' . $json_array['access_token']);
+  $data = drupal_json_decode($user_url->data);
+  // Finally fetching all required details required for drupal registration 
+  $user_json_details = drupal_http_request($data['url'] . '?access_token=' . $json_array['access_token']);
+  $user_details = drupal_json_decode($user_json_details->data);
+  // Checking whether user is already registerd in our site 
+  if (user_get_authmaps($user_details['username']) || user_load_by_mail($user_details['email'])) {
+    global $user;
+    if (user_get_authmaps($user_details['username'])) {
+      // If user is registered using single sign on feature to our site
+      // Loading user by username
+      $user = user_load_by_name($user_details['username']);
+    }
+    else {
+      // If user is manually registered to our site
+      // Loading user by user email
+      $user = user_load_by_mail($user_details['email']);
+    }
+    // Re-generating session which actually logged in the user
+    drupal_session_regenerate();
+  }
+  else {
+    // Registering user to our site
+    user_external_login_register($user_details['username'], 'edmodo');
+    global $user;
+    // Load the current user
+    $user = user_load($user->uid);
+    // Save it's email address
+    user_save($user, array(
+        'mail' => $user_details['email']
+    ));
+  }
+  // Redirecting to user page
+  drupal_goto('user');
+}

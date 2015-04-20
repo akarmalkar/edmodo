@@ -1,0 +1,9 @@
+span.edmodo-btn a {
+  background: url("https://s3-us-west-2.amazonaws.com/s.cdpn.io/41205/edmodo-icon_1.png") no-repeat scroll center center #3784d3;
+  border-radius: 3px;
+  display: block;
+  font-size: 0;
+  height: 36px;
+  text-align: center;
+  width: 37px;
+}

@@ -1,0 +1,6 @@
+name = Edmodo Login
+description = Allows user to login to drupal using their edomdo credentials
+core = 7.x
+package = Edmodo
+dependencies[] = colorbox
+configure = admin/config/people/edmodo-configuration
